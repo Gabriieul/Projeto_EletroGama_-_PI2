@@ -1,7 +1,7 @@
 // SENSOR KY-013 SENSOR DE TEMPERATURA DA BATERIA
-#include<Thermistor.h>                      //Inclusão da biblioteca Thermistor
-Thermistor temp(18);                        //Atribui o pino analógico 18, em que o termistor está conectado
-int calor = 0;
+//#include<Thermistor.h>                      //Inclusão da biblioteca Thermistor
+//Thermistor temp(18);                        //Atribui o pino analógico 18, em que o termistor está conectado
+//int calor = 0;
 
  
 // WIFI
@@ -19,47 +19,51 @@ DHT dht(DHTPIN, DHTTYPE);
 float localHum = 0;
 float localTemp = 0;
 
+// Termistor
+#define pinTermistor 13
+float readTemperatureNTC(float resistenciaTermistor, float resistenciaResistorSerie, float voltageUc, float Beta);
+float getResistencia(int pin, float voltageUc, float adcResolutionUc, float resistenciaEmSerie);
+float calcularCoeficienteBetaTermistor();
+float temperatura;
+
 
 // RELE
-#define rele 5
-bool estado_rele = LOW;
+#define led_pin 5
 
 
-// Sensor de Corrente
-/*
-#define sensor_corrente = 26
+// Sensor de Corrente ACS712
+#define sensor_correnteACS712 21
 float voltage;
-*/
+float leitura_corrente=0.0, Samples=0.0, AvgAcs=0.0, corrente_medidaACS712=0.0;
+
+
+// Sensor de Corrente ZMC
+#define correnteZMC 26
+float leitura_zmc = 0.0;
 
 
 // Sensor de Tensão
-/*
-#define sensor_tensao = 25; //PINO ANALÓGICO EM QUE O SENSOR ESTÁ CONECTADO
-
+#define sensor_tensao 25 //PINO ANALÓGICO EM QUE O SENSOR ESTÁ CONECTADO
 float tensaoEntrada = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DE TENSÃO DE ENTRADA DO SENSOR
 float tensao_medida = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DA TENSÃO MEDIDA PELO SENSOR
-
 float valorR1 = 30000.0; //VALOR DO RESISTOR 1 DO DIVISOR DE TENSÃO
 float valorR2 = 7500.0; // VALOR DO RESISTOR 2 DO DIVISOR DE TENSÃO
 int leitura_tensao = 0; //VARIÁVEL PARA ARMAZENAR A LEITURA DO PINO ANALÓGICO
-*/
+
 
 
 void setup()
 {
   Serial.begin(115200);
-  pinMode(5, OUTPUT); 
-  delay(10);
+  pinMode(led_pin, OUTPUT);  // rele
+  pinMode(correnteZMC, INPUT);
+  pinMode(sensor_tensao, INPUT);
+  pinMode(sensor_correnteACS712, INPUT);
+  pinMode(pinTermistor, INPUT);
 
-
-//pinMode(sensor_tensao, INPUT);
-//pinMode(sensor_corrente, INPUT);
-//pinMode(rele, OUTPUT);
-  
+  delay(1000);
 
   connectWiFi();
- 
-
   dht.begin();  
 }
 
@@ -69,33 +73,52 @@ void loop()
   
   getDHT();
   WiFiLocalWebPageCtrl();
-  temperatura();
+  thermistor();
+  sensordetensao();
+  sensor_ACS712();
+  sensor_ZMC();
 
+ 
+}
 
-/* AINDA VOU ARRUMAR ESSAS COISAS
+void sensor_ZMC(void){
+
+  // Sensor de Corrente ZMC
+  leitura_zmc = analogRead(correnteZMC);
+
+}
+
+void sensordetensao(void)
+{
 // Sensor de Tensão
-leitura_tensao = analogRead(sensor_tensao); //FAZ A LEITURA DO PINO ANALÓGICO E ARMAZENA NA VARIÁVEL O VALOR LIDO
+  leitura_tensao = analogRead(sensor_tensao); //FAZ A LEITURA DO PINO ANALÓGICO E ARMAZENA NA VARIÁVEL O VALOR LIDO
    tensaoEntrada = (leitura_tensao * 5.0) / 1024.0; //VARIÁVEL RECEBE O RESULTADO DO CÁLCULO
    tensao_medida = tensaoEntrada / (valorR2/(valorR1+valorR2)); //VARIÁVEL RECEBE O VALOR DE TENSÃO DC MEDIDA PELO SENSOR  
+  //Serial.print(tensao_medida);
+  
+}
 
-
-// Sensor de Corrente
+void sensor_ACS712(void)
+{
+  // Sensor de Corrente ACS712
   unsigned int x=0;
-  float leitura_corrente=0.0, Samples=0.0, AvgAcs=0.0, corrente_medida=0.0;
+
   for (int x = 0; x < 10; x++)          //Get 10 samples
   {
-    leitura_corrente = analogRead(sensor_corrente);           //Read current sensor values   
+    leitura_corrente = analogRead(21);           //Read current sensor values   
     Samples = Samples + leitura_corrente;        //Add samples together
     delay (10);                           // let ADC settle before next sample 3ms
   }
   AvgAcs=Samples/10.0;                   //Taking Average of Samples
   voltage=AvgAcs*(5.0 / 1024.0);         //((AvgAcs * (5.0 / 1024.0)) is converitng the read voltage in 0-5 volts
-  corrente_medida = (2.5 - voltage)*1000/0.185; //2.5 is offset,,,   0.185v is rise in output voltage when 1A current flows at input
-  */
+  corrente_medidaACS712 = (2.5 - voltage)*1000/0.185; //2.5 is offset,,,   0.185v is rise in output voltage when 1A current flows at input
+  //Serial.print(corrente_medida);
+
+  Serial.print(leitura_corrente);
+
 }
 
-
-void getDHT()
+void getDHT(void)
 {
   float tempIni = localTemp;
   float humIni = localHum;
@@ -105,19 +128,87 @@ void getDHT()
   {
     localTemp = tempIni;
     localHum = humIni;
-    return;
   }
+    delay(1000);
 }
 
 
-void temperatura(){
-  int calor = temp.getTemp();//Variável do tipo inteiro que recebe o valor da temperatura calculado pela biblioteca
-  return;//Intervalo de 1 segundo
+
+void thermistor(void){
+  float resistencia = getResistencia(13, 3.3, 4095.0, 10000.0);
+  float beta = calcularCoeficienteBetaTermistor();
+  float temperatura_bateria = readTemperatureNTC(resistencia, 10000.0, 3.3, beta);
+  temperatura = temperatura_bateria;
+  //Serial.print("Temperatura:");
+ // Serial.print(temperatura_bateria);
+
+}
+
+float readTemperatureNTC(float resistenciaTermistor,
+                         float resistenciaResistorSerie,
+                         float voltageUc,
+                         float Beta) {
+  // Constantes locais
+  const double To = 298.15;    // Temperatura em Kelvin para 25 graus Celsius
+  const double Ro = 10000.0;   // Resistência do termistor a 25 graus Celsius
+
+  // Variáveis locais
+  double Vout = 0; // Tensão lida da porta analógica do termistor.
+  double Rt = 0; // Resistência lida da porta analógica.
+  double T = 0; // Temperatura em Kelvin.
+  double Tc = 0; // Temperatura em Graus Celsius.
+
+  Vout = resistenciaResistorSerie /
+         (resistenciaResistorSerie + resistenciaTermistor) *
+         voltageUc; // Cálculo da tensão lida da porta analógica do termistor.
+
+  Rt = resistenciaResistorSerie * Vout /
+       (voltageUc - Vout); // Cálculo da resistência da porta analógica.
+  T = 1 /
+      (
+        1 / To + log(Rt / Ro) / Beta
+      ); // Aplicação da equação de parâmetro Beta para obtenção da Temperatura em Kelvin.
+
+  Tc = T - 273.15; // Conversão de Kelvin para Celsius.
+  return Tc;
+}
+
+/**
+  Calcule o valor Beta de um termistor, com os valores de resistência (RT1 e RT2)
+    obtidos do datasheet nas temperaturas correspondentes (T1 e T2).
+
+  @return O valor Beta.
+*/
+float calcularCoeficienteBetaTermistor() {
+  float beta;
+  const float T1 = 273.15;  // valor de temperatura 0º C convertido em Kelvin.
+  const float T2 = 373.15;  // valor de temperatura 100º C convertido em Kelvin.
+  const float RT1 = 27.219; // valor da resistência (em ohm) na temperatura T1.
+  const float RT2 = 0.974;  // valor da resistência (em ohm) na temperatura T2.
+  beta = (log(RT1 / RT2)) / ((1 / T1) - (1 / T2));  // cálculo de beta.
+  return beta;
+}
+
+
+float getResistencia(int pin, float voltageUc, float adcResolutionUc, float resistenciaEmSerie) {
+  float resistenciaDesconhecida = 0;
+
+  resistenciaDesconhecida =
+    resistenciaEmSerie *
+    (voltageUc /
+     (
+       (analogRead(pin) * voltageUc) /
+       adcResolutionUc
+     ) - 1
+    );
+
+  return resistenciaDesconhecida;
 }
 
 
 void WiFiLocalWebPageCtrl(void)
 {
+  
   WiFiClient client = server.available();   // listen for incoming clients
   //client = server.available();
   if (client) {                             // if you get a client,
@@ -140,26 +231,30 @@ void WiFiLocalWebPageCtrl(void)
 
             // the content of the HTTP response follows the header:
             //WiFiLocalWebPageCtrl(); 
-              client.print("Temperature now is: ");
+              client.print("Temperatura ambiente: ");
               client.print(localTemp);
               client.print("  oC<br>");
-              client.print("Humidity now is:     ");
+              client.print("Umidade ambiente: ");
               client.print(localHum);
               client.print(" % <br>");
-              client.print("Sensor de temperatura KY-013: ");
-              client.print(calor);
-              client.print (" C <br>");
-              //client.print("Sensor de Corrente: ");
-              //client.print(corrente_medida);
-              //client.print(" mA <br>");  
+              client.print("Temperatura da bateria: ");
+              client.print(temperatura);
+              client.print (" oC <br>");
+              client.print("Sensor de Corrente ACS712: ");
+              client.print(corrente_medidaACS712);
+              client.print(" mA <br>");  
                           
-              //client.print("Sensor de Tensão: ");
-              //client.print(tensao_medida);
-              //client.print(" V <br>");
+              client.print("Sensor de Tensao: ");
+              client.print(tensao_medida);
+              client.print(" V <br>");
+
+              client.print("Sensor de Corrente ZMC: ");
+              client.print(leitura_zmc);
+              client.print(" mA <br>"); 
 
 
-              client.print("Click <a href=\"/H\">here</a> to turn the LED on.<br>");
-              client.print("Click <a href=\"/L\">here</a> to turn the LED off.<br>");         
+              client.print("Clique <a href=\"/H\">aqui</a> para iniciar o recarregamento.<br>");
+              client.print("Clique <a href=\"/L\">aqui</a> para interromper o recarregamento.<br>");         
 
             // The HTTP response ends with another blank line:
             client.println();
@@ -174,24 +269,21 @@ void WiFiLocalWebPageCtrl(void)
 
         // CONTROLE DO RELE 
         if (currentLine.endsWith("GET /H")) {
-          
-          if (estado_rele == LOW) {
-            digitalWrite(rele, HIGH);
-            estado_rele = HIGH;
-            } else {
-            digitalWrite(rele, HIGH);
-            estado_rele = HIGH;
-                    }  
+          //if (estado_rele == LOW) {
+            digitalWrite(led_pin, HIGH);
+            //} else {
+            //digitalWrite(rele, HIGH);
+           // estado_rele = HIGH;
+          //          }  
         }
         
         if (currentLine.endsWith("GET /L")) {
-          if (estado_rele == HIGH) {
-            digitalWrite(rele, LOW);
-            estado_rele = LOW;
-            } else {
-            digitalWrite(rele, LOW);
-            estado_rele = LOW;
-                    }
+          //if (estado_rele == HIGH) {
+            digitalWrite(led_pin, LOW);
+           // } else {
+           // digitalWrite(rele, LOW);
+           // estado_rele = LOW;
+           //         }
         }
       }
     }
@@ -211,7 +303,7 @@ void connectWiFi(void)
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) 
   {
-    delay(1000);
+    delay(500);
     Serial.print(".");
   }
   Serial.println("");
@@ -221,3 +313,4 @@ void connectWiFi(void)
   
   server.begin();
 }
+
