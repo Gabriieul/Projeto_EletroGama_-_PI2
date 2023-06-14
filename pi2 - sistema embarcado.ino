@@ -6,21 +6,21 @@
  
 // WIFI
 #include <WiFi.h>
-const char* ssid     = "2G_GABRIEL";
-const char* password = "84122163";
+const char* ssid     = "moto edge";
+const char* password = "31313131";
 WiFiServer server(80);
 
 
 // DHT 11
 #include "DHT.h"
-#define DHTPIN 4  
+#define DHTPIN 4
 #define DHTTYPE DHT11 
 DHT dht(DHTPIN, DHTTYPE);
 float localHum = 0;
 float localTemp = 0;
 
 // Termistor
-#define pinTermistor 13
+#define pinTermistor 34
 float readTemperatureNTC(float resistenciaTermistor, float resistenciaResistorSerie, float voltageUc, float Beta);
 float getResistencia(int pin, float voltageUc, float adcResolutionUc, float resistenciaEmSerie);
 float calcularCoeficienteBetaTermistor();
@@ -32,40 +32,42 @@ float temperatura;
 
 
 // Sensor de Corrente ACS712
-#define sensor_correnteACS712 21
+#define sensor_correnteACS712 35
 float voltage;
 float leitura_corrente=0.0, Samples=0.0, AvgAcs=0.0, corrente_medidaACS712=0.0;
 
 
 // Sensor de Corrente ZMC
-#define correnteZMC 26
+#define correnteZMC 32
 float leitura_zmc = 0.0;
 
 
 // Sensor de Tensão
-#define sensor_tensao 25 //PINO ANALÓGICO EM QUE O SENSOR ESTÁ CONECTADO
+const int pinoSensor = 36; //PINO ANALÓGICO EM QUE O SENSOR ESTÁ CONECTADO
+ 
 float tensaoEntrada = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DE TENSÃO DE ENTRADA DO SENSOR
-float tensao_medida = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DA TENSÃO MEDIDA PELO SENSOR
+float tensaoMedida = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DA TENSÃO MEDIDA PELO SENSOR
+ 
 float valorR1 = 30000.0; //VALOR DO RESISTOR 1 DO DIVISOR DE TENSÃO
 float valorR2 = 7500.0; // VALOR DO RESISTOR 2 DO DIVISOR DE TENSÃO
-int leitura_tensao = 0; //VARIÁVEL PARA ARMAZENAR A LEITURA DO PINO ANALÓGICO
-
+int leituraSensor = 0; //VARIÁVEL PARA ARMAZENAR A LEITURA DO PINO ANALÓGICO
 
 
 void setup()
 {
-  Serial.begin(115200);
+ 
   pinMode(led_pin, OUTPUT);  // rele
   pinMode(correnteZMC, INPUT);
-  pinMode(sensor_tensao, INPUT);
+  pinMode(pinoSensor, INPUT);
   pinMode(sensor_correnteACS712, INPUT);
   pinMode(pinTermistor, INPUT);
-
-  delay(1000);
+ 
+  Serial.begin(9600);
 
   connectWiFi();
   dht.begin();  
 }
+
 
 
 void loop()
@@ -85,16 +87,19 @@ void sensor_ZMC(void){
 
   // Sensor de Corrente ZMC
   leitura_zmc = analogRead(correnteZMC);
+  Serial.println(leitura_zmc);
 
 }
 
 void sensordetensao(void)
 {
 // Sensor de Tensão
-  leitura_tensao = analogRead(sensor_tensao); //FAZ A LEITURA DO PINO ANALÓGICO E ARMAZENA NA VARIÁVEL O VALOR LIDO
-   tensaoEntrada = (leitura_tensao * 5.0) / 1024.0; //VARIÁVEL RECEBE O RESULTADO DO CÁLCULO
-   tensao_medida = tensaoEntrada / (valorR2/(valorR1+valorR2)); //VARIÁVEL RECEBE O VALOR DE TENSÃO DC MEDIDA PELO SENSOR  
-  //Serial.print(tensao_medida);
+    
+   leituraSensor = analogRead(pinoSensor); //FAZ A LEITURA DO PINO ANALÓGICO E ARMAZENA NA VARIÁVEL O VALOR LIDO
+   tensaoEntrada = (leituraSensor * 5.0) / 1024.0; //VARIÁVEL RECEBE O RESULTADO DO CÁLCULO
+   tensaoMedida = tensaoEntrada / (valorR2/(valorR1+valorR2)); //VARIÁVEL RECEBE O VALOR DE TENSÃO DC MEDIDA PELO SENSOR
+Serial.println(tensaoMedida);     
+  
   
 }
 
@@ -105,16 +110,16 @@ void sensor_ACS712(void)
 
   for (int x = 0; x < 10; x++)          //Get 10 samples
   {
-    leitura_corrente = analogRead(21);           //Read current sensor values   
+    leitura_corrente = analogRead(sensor_correnteACS712);           //Read current sensor values   
     Samples = Samples + leitura_corrente;        //Add samples together
     delay (10);                           // let ADC settle before next sample 3ms
   }
   AvgAcs=Samples/10.0;                   //Taking Average of Samples
   voltage=AvgAcs*(5.0 / 1024.0);         //((AvgAcs * (5.0 / 1024.0)) is converitng the read voltage in 0-5 volts
   corrente_medidaACS712 = (2.5 - voltage)*1000/0.185; //2.5 is offset,,,   0.185v is rise in output voltage when 1A current flows at input
-  //Serial.print(corrente_medida);
+  Serial.println(corrente_medidaACS712);
 
-  Serial.print(leitura_corrente);
+  //Serial.print(leitura_corrente);
 
 }
 
@@ -135,12 +140,12 @@ void getDHT(void)
 
 
 void thermistor(void){
-  float resistencia = getResistencia(13, 3.3, 4095.0, 10000.0);
+  float resistencia = getResistencia(34, 3.3, 4095.0, 10000.0);
   float beta = calcularCoeficienteBetaTermistor();
   float temperatura_bateria = readTemperatureNTC(resistencia, 10000.0, 3.3, beta);
   temperatura = temperatura_bateria;
   //Serial.print("Temperatura:");
- // Serial.print(temperatura_bateria);
+    Serial.print(temperatura_bateria);
 
 }
 
@@ -245,7 +250,7 @@ void WiFiLocalWebPageCtrl(void)
               client.print(" mA <br>");  
                           
               client.print("Sensor de Tensao: ");
-              client.print(tensao_medida);
+              client.print(tensaoMedida);
               client.print(" V <br>");
 
               client.print("Sensor de Corrente ZMC: ");
@@ -312,5 +317,6 @@ void connectWiFi(void)
   Serial.println(WiFi.localIP());
   
   server.begin();
+
 }
 
