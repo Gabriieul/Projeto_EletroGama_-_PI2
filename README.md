@@ -1,2 +1,2 @@
-# Projeto EletroPosto - PI2
-O projeto EletroPosto foi desenvolvido na disciplina Projeto Integrador 2 e eu era da equipe de Sistemas Embarcados.
+# Projeto EletroGama - PI2
+Participei do projeto EletroGama como membro da equipe de Sistemas Embarcados.
